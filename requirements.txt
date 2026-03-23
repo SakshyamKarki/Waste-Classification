@@ -1,0 +1,19 @@
+# Core frameworks
+fastapi
+uvicorn
+streamlit
+
+# Machine Learning & Deep Learning
+tensorflow
+numpy
+scikit-learn
+
+# Image processing
+Pillow
+opencv-python
+
+# Requests for frontend-backend communication
+requests
+
+# Multipart for FastAPI uploads 
+python-multipart
