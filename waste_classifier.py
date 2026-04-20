@@ -1,70 +1,70 @@
 import streamlit as st
 from PIL import Image
 import numpy as np
-import os
-from tensorflow.keras.models import load_model
+import tensorflow as tf
 
-# ----------------------------
-# Load models
-# ----------------------------
+# ──────────────────────────────────────────────────────────────────────────────
+# Load models  (cached so they are loaded only once)
+# ──────────────────────────────────────────────────────────────────────────────
 @st.cache_resource
 def load_models():
-    cnn_model = load_model("cnn_model.h5")
-    mobilenet_model = load_model("mobilenet_model.h5")
 
-    # Dummy forward pass to initialize Sequential models
-    dummy_input = np.zeros((1, 224, 224, 3), dtype=np.float32)
-    cnn_model.predict(dummy_input)
-    mobilenet_model.predict(dummy_input)
+    cnn_model       = tf.keras.models.load_model("models/cnn_model.h5")
+    mobilenet_model = tf.keras.models.load_model("models/mobilenet_model.h5")
 
+    # Warm-up pass so the first real prediction is fast
+    dummy = np.zeros((1, 224, 224, 3), dtype=np.float32)
+    cnn_model.predict(dummy, verbose=0)
+    mobilenet_model.predict(dummy, verbose=0)
     return cnn_model, mobilenet_model
+
 
 cnn_model, mobilenet_model = load_models()
 
-# ----------------------------
-# Class Labels
-# ----------------------------
-classes = ['cardboard', 'glass', 'metal', 'paper', 'plastic', 'trash']
+# ──────────────────────────────────────────────────────────────────────────────
+# Class labels
+# ──────────────────────────────────────────────────────────────────────────────
+CLASSES = ['cardboard', 'glass', 'metal', 'paper', 'plastic', 'trash']
 
-# ----------------------------
-# Preprocessing
-# ----------------------------
-def preprocess_image(img: Image.Image, target_size=(224,224)):
-    img = img.convert("RGB")
-    img = img.resize(target_size)
-    img_array = np.array(img) / 255.0
-    img_array = np.expand_dims(img_array, axis=0)
-    return img_array
+# ──────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ──────────────────────────────────────────────────────────────────────────────
+def preprocess(img: Image.Image, target=(224, 224)) -> np.ndarray:
+    img = img.convert("RGB").resize(target)
+    arr = np.array(img) / 255.0
+    return np.expand_dims(arr, 0)
 
-# ----------------------------
-# Prediction
-# ----------------------------
+
 def predict(model, img: Image.Image):
-    img_array = preprocess_image(img)
-    preds = model.predict(img_array)
-    class_idx = np.argmax(preds, axis=1)[0]
-    confidence = float(np.max(preds))
-    return classes[class_idx], round(confidence*100, 2)
+    probs     = model.predict(preprocess(img), verbose=0)[0]
+    class_idx = int(np.argmax(probs))
+    return CLASSES[class_idx], round(float(probs[class_idx]) * 100, 2), probs
 
-# ----------------------------
-# Streamlit UI
-# ----------------------------
+# ──────────────────────────────────────────────────────────────────────────────
+# UI
+# ──────────────────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Waste Classifier", layout="centered")
-st.title("Waste Image Classification")
+st.title("🗑️ Waste Image Classification")
+st.caption("Classify waste into: cardboard · glass · metal · paper · plastic · trash")
 
 uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
-model_option = st.selectbox("Select Model", ["CNN", "MobileNet"])
+model_option  = st.selectbox("Select Model", ["CNN", "MobileNetV2 (fine-tuned)"])
 
 if uploaded_file and st.button("Predict"):
     try:
         img = Image.open(uploaded_file)
         st.image(img, caption="Uploaded Image", width=400)
 
-        model = cnn_model if model_option == "CNN" else mobilenet_model
-        predicted_class, confidence = predict(model, img)
+        model = cnn_model if "CNN" in model_option else mobilenet_model
+        predicted_class, confidence, probs = predict(model, img)
 
-        st.success(f"Predicted Class: **{predicted_class}**")
-        st.info(f"Confidence: **{confidence}%**")
+        st.success(f"**Predicted Class:** {predicted_class}")
+        st.info(f"**Confidence:** {confidence}%")
+
+        # Show probability bar chart for all classes
+        st.subheader("Class Probabilities")
+        prob_dict = {c: float(p) for c, p in zip(CLASSES, probs)}
+        st.bar_chart(prob_dict)
 
     except Exception as e:
-        st.error(f"Error: {str(e)}")
+        st.error(f"Error: {e}")
